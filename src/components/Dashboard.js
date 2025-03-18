@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import styled from '@emotion/styled';
 import { useNavigate } from 'react-router-dom';
 import { fetchJobs } from '../services/api';
+import { mockJobs } from '../services/mockData';
 
 const DashboardContainer = styled.div`
   padding: 2rem;
@@ -183,21 +184,20 @@ const Tag = styled.span`
 
 const LoadingSpinner = styled.div`
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   align-items: center;
-  height: 300px;
-  font-size: 1.2rem;
+  justify-content: center;
+  height: 200px;
   color: var(--secondary-color);
 
-  &::after {
-    content: '';
-    width: 40px;
-    height: 40px;
-    border: 4px solid #f3f3f3;
-    border-top: 4px solid var(--secondary-color);
+  .spinner {
+    width: 50px;
+    height: 50px;
+    border: 5px solid #f3f3f3;
+    border-top: 5px solid var(--secondary-color);
     border-radius: 50%;
     animation: spin 1s linear infinite;
-    margin-left: 1rem;
+    margin-bottom: 20px;
   }
 
   @keyframes spin {
@@ -207,12 +207,13 @@ const LoadingSpinner = styled.div`
 `;
 
 const ErrorMessage = styled.div`
+  background-color: #fee;
   color: #e74c3c;
-  text-align: center;
   padding: 20px;
-  background: #fdeaea;
   border-radius: 10px;
-  margin: 20px 0;
+  margin: 20px;
+  text-align: center;
+  border-left: 5px solid #e74c3c;
 `;
 
 const CompanyLogo = styled.img`
@@ -223,54 +224,129 @@ const CompanyLogo = styled.img`
   margin-right: 1rem;
 `;
 
+const ErrorContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  gap: 1rem;
+`;
+
+const RetryButton = styled.button`
+  padding: 10px 20px;
+  background: var(--secondary-color);
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: all 0.3s ease;
+
+  &:hover {
+    background: #2980b9;
+    transform: translateY(-2px);
+  }
+`;
+
+const DataSourceIndicator = styled.div`
+  background: #fff3cd;
+  color: #856404;
+  padding: 8px;
+  border-radius: 4px;
+  margin-top: 8px;
+  font-size: 0.9rem;
+`;
+
+const RefreshLink = styled.button`
+  background: none;
+  border: none;
+  color: #0066cc;
+  text-decoration: underline;
+  cursor: pointer;
+  margin-left: 8px;
+  padding: 0;
+  font-size: 0.9rem;
+
+  &:hover {
+    color: #004499;
+  }
+`;
+
 function Dashboard() {
   const navigate = useNavigate();
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isUsingMockData, setIsUsingMockData] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [user, setUser] = useState(null);
 
   useEffect(() => {
+    const loadJobs = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await fetchJobs();
+        
+        if (Array.isArray(data)) {
+          setJobs(data);
+          setIsUsingMockData(data.length === 2);
+          console.log('Jobs loaded:', data.length, 'items');
+        } else {
+          throw new Error('Invalid data format received');
+        }
+      } catch (err) {
+        console.error('Failed to load jobs:', err);
+        setError('Unable to load jobs. Please check your internet connection and try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
     const currentUser = localStorage.getItem('currentUser');
     if (currentUser) {
       setUser(JSON.parse(currentUser));
+      loadJobs();
     } else {
       navigate('/');
     }
-
-    loadJobs();
   }, [navigate]);
 
-  const loadJobs = async () => {
+  const handleRefresh = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
       const data = await fetchJobs();
-      setJobs(data);
-      setLoading(false);
+      if (Array.isArray(data)) {
+        setJobs(data);
+        setIsUsingMockData(data.length === 2);
+      }
     } catch (err) {
-      setError('Failed to load jobs. Please try again later.');
+      setError('Failed to refresh jobs. Please try again.');
+    } finally {
       setLoading(false);
     }
   };
 
-  const handleSearch = () => {
-    const filteredJobs = jobs.filter(job => 
-      job.position.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      job.company.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredJobs = jobs.filter(job => {
+    if (!searchTerm) return true;
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      job.position.toLowerCase().includes(searchLower) ||
+      job.company.toLowerCase().includes(searchLower) ||
+      job.location.toLowerCase().includes(searchLower)
     );
-    setJobs(filteredJobs);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('currentUser');
-    navigate('/');
-  };
+  });
 
   if (loading) {
     return (
       <DashboardContainer>
-        <LoadingSpinner>Loading jobs...</LoadingSpinner>
+        <LoadingSpinner>
+          <div className="spinner"></div>
+          <div>Loading jobs...</div>
+          <small>Please wait while we fetch the latest jobs</small>
+        </LoadingSpinner>
       </DashboardContainer>
     );
   }
@@ -278,7 +354,15 @@ function Dashboard() {
   if (error) {
     return (
       <DashboardContainer>
-        <ErrorMessage>{error}</ErrorMessage>
+        <ErrorContainer>
+          <ErrorMessage>{error}</ErrorMessage>
+          <div>
+            <RetryButton onClick={handleRefresh}>
+              Try Again
+            </RetryButton>
+          </div>
+          <small>If the problem persists, please contact support.</small>
+        </ErrorContainer>
       </DashboardContainer>
     );
   }
@@ -288,9 +372,20 @@ function Dashboard() {
       <Header>
         <div>
           <h1>Welcome, {user?.name}</h1>
-          <p>{jobs.length} jobs found</p>
+          <p>{filteredJobs.length} jobs found</p>
+          {isUsingMockData && (
+            <DataSourceIndicator>
+              ⚠️ Showing sample data. 
+              <RefreshLink onClick={handleRefresh}>Click to try loading real data</RefreshLink>
+            </DataSourceIndicator>
+          )}
         </div>
-        <LogoutButton onClick={handleLogout}>Logout</LogoutButton>
+        <LogoutButton onClick={() => {
+          localStorage.removeItem('currentUser');
+          navigate('/');
+        }}>
+          Logout
+        </LogoutButton>
       </Header>
 
       <SearchContainer>
@@ -299,13 +394,11 @@ function Dashboard() {
           placeholder="Search for jobs..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
         />
-        <SearchButton onClick={handleSearch}>Search</SearchButton>
       </SearchContainer>
 
       <JobsGrid>
-        {jobs.map((job) => (
+        {filteredJobs.map((job) => (
           <JobCard key={job.id}>
             {job.logo && (
               <CompanyLogo src={job.logo} alt={job.company} />
@@ -322,7 +415,7 @@ function Dashboard() {
               <span>⏰</span> Posted: {new Date(job.postedAt).toLocaleDateString()}
             </JobDetail>
             <JobDetail>
-              <span>👥</span> Experience: {job.experience}
+              <span>👥</span> {job.experience}
             </JobDetail>
             <Description>
               {job.description.substring(0, 150)}...
